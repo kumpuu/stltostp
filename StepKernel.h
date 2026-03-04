@@ -33,6 +33,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #include <algorithm>
 #include <sstream>
 #include <math.h>
+#include "Vector3.h"
 
 class StepKernel
 {
@@ -80,25 +81,15 @@ public:
 	class Direction : public Entity
 	{
 	public:
-		Direction(std::vector<Entity*> &ent_list) : Entity(ent_list)
-		{
-			x = 0;
-			y = 0;
-			z = 0;
-		}
-		Direction(std::vector<Entity*> &ent_list, double x_in, double y_in, double z_in): Entity(ent_list)
-		{
-			x = x_in;
-			y = y_in;
-			z = z_in;
-		}
+		Direction(std::vector<Entity*> &ent_list) : Entity(ent_list) {}
+		Direction(std::vector<Entity*> &ent_list, Vector3 v): Entity(ent_list), v(v) {}
 
 		virtual ~Direction()
 		{}
 
 		virtual void serialize(std::ostream& stream_in)
 		{
-			stream_in << "#" << id << " = DIRECTION('"<< label<<"', (" << x << ", " << y << ", " << z << "));\n";
+			stream_in << "#" << id << " = DIRECTION('"<< label<<"', (" << v.x << ", " << v.y << ", " << v.z << "));\n";
 		}
 
 		virtual void parse_args(std::map<int,Entity*> &ent_map, std::string args)
@@ -108,34 +99,24 @@ public:
 			auto arg_str = args.substr(st+1, en - st - 1);
 			std::replace(arg_str.begin(), arg_str.end(), ',', ' ');
 			std::stringstream ss(arg_str);
-			ss >> x >> y >> z;
+			ss >> v.x >> v.y >> v.z;
 		}
 
-		double x, y, z;
+		Vector3 v;
 	};
 
 	class Point : public Entity
 	{
 	public:
-		Point(std::vector<Entity*> &ent_list) : Entity(ent_list)
-		{
-			x = 0;
-			y = 0;
-			z = 0;
-		}
-		Point(std::vector<Entity*> &ent_list, double x_in, double y_in, double z_in) : Entity(ent_list)
-		{
-			x = x_in;
-			y = y_in;
-			z = z_in;
-		}
+		Point(std::vector<Entity*> &ent_list) : Entity(ent_list) {}
+		Point(std::vector<Entity*> &ent_list, Vector3 v) : Entity(ent_list), v(v) {}
 
 		virtual ~Point()
 		{}
 
 		virtual void serialize(std::ostream& stream_in)
 		{
-			stream_in << "#" << id << " = CARTESIAN_POINT('" << label << "', (" << x << "," << y << "," << z << "));\n";
+			stream_in << "#" << id << " = CARTESIAN_POINT('" << label << "', (" << v.x << "," << v.y << "," << v.z << "));\n";
 		}
 		virtual void parse_args(std::map<int, Entity*> &ent_map, std::string args)
 		{
@@ -144,9 +125,9 @@ public:
 			auto arg_str = args.substr(st + 1, en - st - 1);
 			std::replace(arg_str.begin(), arg_str.end(), ',', ' ');
 			std::stringstream ss(arg_str);
-			ss >> x >> y >> z;
+			ss >> v.x >> v.y >> v.z;
 		}
-		double x, y, z;
+		Vector3 v;
 	};
 
 	class Csys3D : public Entity
@@ -746,16 +727,34 @@ public:
 
 	StepKernel::EdgeCurve* create_edge_curve(StepKernel::Vertex * vert1, StepKernel::Vertex * vert2, bool dir);
 
-	void build_tri_body(std::vector<double> tris, double tol, int &merged_edge_cnt);
+	typedef std::pair<Vector3, Vector3> Vec3Tuple;
+	struct cmp_Vec3Tuple {
+		bool operator()(const Vec3Tuple& lhs, const Vec3Tuple& rhs) const {
+			for (int i = 0; i < 3; i++)
+			{
+				if (lhs.first.data[i] < rhs.first.data[i]) return true;
+				if (lhs.first.data[i] > rhs.first.data[i]) return false;
+			}
+			for (int i = 0; i < 3; i++)
+			{
+				if (lhs.second.data[i] < rhs.second.data[i]) return true;
+				if (lhs.second.data[i] > rhs.second.data[i]) return false;
+			}
+			return false;
+		}
+	};
+	typedef std::map<Vec3Tuple, StepKernel::EdgeCurve*, cmp_Vec3Tuple > Edge_Map;
+
+	void build_tri_body(std::vector<Vector3> tris, double tol, int &merged_edge_cnt);
 	void get_edge_from_map(
-		double  p0[3],
-		double  p1[3],
-		std::map<std::tuple<double, double, double, double, double, double>, StepKernel::EdgeCurve *> &edge_map,
-		StepKernel::Vertex * vert1,
-		StepKernel::Vertex * vert2,
-		EdgeCurve *& edge_curve,
-		bool &edge_dir,
-		int &merge_cnt);
+		const Vector3& p0,
+		const Vector3& p1,
+		Edge_Map& edge_map,
+		StepKernel::Vertex* vert0,
+		StepKernel::Vertex* vert1,
+		EdgeCurve*& edge_curve,
+		bool& edge_dir,
+		int& merge_cnt);
 	void write_step(std::string file_name, const std::string &unit = "mm", const std::string &schema = "203");
 	std::string read_line(std::ifstream &stp_file, bool skip_all_space);
 	void read_step(std::string file_name);

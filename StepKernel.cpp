@@ -34,6 +34,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #include <map>
 #include <iomanip> // put_time
 #include <cctype>
+
 StepKernel::StepKernel()
 {
 
@@ -46,100 +47,73 @@ StepKernel::~StepKernel()
 StepKernel::EdgeCurve* StepKernel::create_edge_curve(StepKernel::Vertex * vert1, StepKernel::Vertex * vert2,bool dir)
 {
 	// curve 1
-	auto line_point1 = new Point(entities, vert1->point->x, vert1->point->y, vert1->point->z);
-	double vx = vert2->point->x - vert1->point->x;
-	double vy = vert2->point->y - vert1->point->y;
-	double vz = vert2->point->z - vert1->point->z;
-	double dist = sqrt(vx * vx + vy * vy + vz * vz);
-	vx = vx / dist;
-	vy = vy / dist;
-	vz = vz / dist;
+	auto line_point1 = new Point(entities, vert1->point->v);
+	Vector3 v = vert2->point->v - vert1->point->v;
+	v.normalize();
 
-	auto line_dir1 = new Direction(entities, vx, vy, vz);
+	auto line_dir1 = new Direction(entities, v);
 	auto line_vector1 = new Vector(entities, line_dir1, 1.0);
 	auto line1 = new Line(entities, line_point1, line_vector1);
 	auto surf_curve1 = new SurfaceCurve(entities, line1);
 	return new EdgeCurve(entities, vert1, vert2, surf_curve1, dir);
 }
 
-void StepKernel::build_tri_body(std::vector<double> tris,double tol, int &merged_edge_cnt)
+void StepKernel::build_tri_body(std::vector<Vector3> nodes,double tol, int &merged_edge_cnt)
 {
-	auto point = new Point(entities, 0.0, 0.0, 0.0);
-	auto dir_1 = new Direction(entities, 0.0, 0.0, 1.0);
-	auto dir_2 = new Direction(entities, 1.0, 0.0, 0.0);
-
-	auto base_csys = new Csys3D(entities, dir_1, dir_2, point);
 	std::vector<Face*> faces;
-	std::map<std::tuple<double, double, double, double, double, double>, EdgeCurve*> edge_map;
-	for (std::size_t i = 0; i < tris.size() / 9; i++)
+	Edge_Map edge_map;
+
+	for (std::size_t i = 0; i < nodes.size() / 3; i++)
 	{
-		double p0[3] = { tris[i * 9 + 0],tris[i * 9 + 1] ,tris[i * 9 + 2] };
-		double p1[3] = { tris[i * 9 + 3],tris[i * 9 + 4] ,tris[i * 9 + 5] };
-		double p2[3] = { tris[i * 9 + 6],tris[i * 9 + 7] ,tris[i * 9 + 8] };
+		Vector3 p0 = nodes[i * 3];
+		Vector3 p1 = nodes[i * 3 + 1];
+		Vector3 p2 = nodes[i * 3 + 2];
 
-		double d0[3] = { 1,0,0 };
-		d0[0] = p1[0] - p0[0];
-		d0[1] = p1[1] - p0[1];
-		d0[2] = p1[2] - p0[2];
-		double dist0 = sqrt(d0[0] * d0[0] + d0[1] * d0[1] + d0[2] * d0[2]);
-		if (dist0 < tol)
-			continue;
-		d0[0] = d0[0] / dist0;
-		d0[1] = d0[1] / dist0;
-		d0[2] = d0[2] / dist0;
+		Vector3 d0 = p1 - p0;
+		if (d0.len() < tol)	continue;
+		d0.normalize();
 
-		double d1[3] = { 1,0,0 };
-		d1[0] = p2[0] - p0[0];
-		d1[1] = p2[1] - p0[1];
-		d1[2] = p2[2] - p0[2];
-		double dist1 = sqrt(d1[0] * d1[0] + d1[1] * d1[1] + d1[2] * d1[2]);
-		if (dist1 < tol)
-			continue;
-		d1[0] = d1[0] / dist1;
-		d1[1] = d1[1] / dist1;
-		d1[2] = d1[2] / dist1;
+		Vector3 d1 = p2 - p0;
+		if (d1.len() < tol)	continue;
+		d1.normalize();
 
 		// now cross
-		// cross to get the thrid direction for the beam csys
-		double d2[3] = { d0[1] * d1[2] - d0[2] * d1[1], d0[2] * d1[0] - d0[0] * d1[2], d0[0] * d1[1] - d0[1] * d1[0] };
-		double dist2 = sqrt(d2[0] * d2[0] + d2[1] * d2[1] + d2[2] * d2[2]);
-		if (dist2 < tol)
-			continue;
-		d2[0] = d2[0] / dist2;
-		d2[1] = d2[1] / dist2;
-		d2[2] = d2[2] / dist2;
+		// cross to get the third direction for the beam csys
+		Vector3 d2 = d0.cross(d1);
+		if (d2.len() < tol) continue;
+		d2.normalize();
 
 		// correct the m direction
-		double d1_cor[3] = { d2[1] * d0[2] - d2[2] * d0[1], d2[2] * d0[0] - d2[0] * d0[2], d2[0] * d0[1] - d2[1] * d0[0] };
-		double d1_cor_len = sqrt(d1_cor[0] * d1_cor[0] + d1_cor[1] * d1_cor[1] + d1_cor[2] * d1_cor[2]);
-		d1[0] = d1_cor[0] / d1_cor_len;
-		d1[1] = d1_cor[1] / d1_cor_len;
-		d1[2] = d1_cor[2] / d1_cor_len;
+		//double d1_cor[3] = { d2[1] * d0[2] - d2[2] * d0[1], d2[2] * d0[0] - d2[0] * d0[2], d2[0] * d0[1] - d2[1] * d0[0] };
+		//double d1_cor_len = sqrt(d1_cor[0] * d1_cor[0] + d1_cor[1] * d1_cor[1] + d1_cor[2] * d1_cor[2]);
+		//d1[0] = d1_cor[0] / d1_cor_len;
+		//d1[1] = d1_cor[1] / d1_cor_len;
+		//d1[2] = d1_cor[2] / d1_cor_len;
 
 
 		// build the face
 		// the 3 vertex locations
-		auto point1 = new Point(entities, p0[0], p0[1], p0[2]);
+		auto point0 = new Point(entities, p0);
+		auto vert0 = new Vertex(entities, point0);
+
+		auto point1 = new Point(entities, p1);
 		auto vert1 = new Vertex(entities, point1);
 
-		auto point2 = new Point(entities, p1[0], p1[1], p1[2]);
+		auto point2 = new Point(entities, p2);
 		auto vert2 = new Vertex(entities, point2);
-
-		auto point3 = new Point(entities, p2[0], p2[1], p2[2]);
-		auto vert3 = new Vertex(entities, point3);
 
 
 		EdgeCurve* edge_curve1 = 0;
 		bool edge1_dir = true;
-		get_edge_from_map(p0, p1, edge_map, vert1, vert2, edge_curve1, edge1_dir, merged_edge_cnt);
+		get_edge_from_map(p0, p1, edge_map, vert0, vert1, edge_curve1, edge1_dir, merged_edge_cnt);
 
 		EdgeCurve* edge_curve2 = 0;
 		bool edge2_dir = true;
-		get_edge_from_map(p1, p2, edge_map, vert2, vert3, edge_curve2, edge2_dir, merged_edge_cnt);
+		get_edge_from_map(p1, p2, edge_map, vert1, vert2, edge_curve2, edge2_dir, merged_edge_cnt);
 
 		EdgeCurve* edge_curve3 = 0;
 		bool edge3_dir = true;
-		get_edge_from_map(p2, p0, edge_map, vert3, vert1, edge_curve3, edge3_dir, merged_edge_cnt);
+		get_edge_from_map(p2, p0, edge_map, vert2, vert0, edge_curve3, edge3_dir, merged_edge_cnt);
 
 		std::vector<OrientedEdge*> oriented_edges;
 		oriented_edges.push_back(new OrientedEdge(entities, edge_curve1, edge1_dir));
@@ -147,14 +121,13 @@ void StepKernel::build_tri_body(std::vector<double> tris,double tol, int &merged
 		oriented_edges.push_back(new OrientedEdge(entities, edge_curve3, edge3_dir));
 
 		// create the plane
-		auto plane_point = new Point(entities, p0[0], p0[1], p0[2]);
-		auto plane_dir_1 = new Direction(entities, d2[0], d2[1], d2[2]);
-		auto plane_dir_2 = new Direction(entities, d0[0], d0[1], d0[2]);
+		auto plane_point = new Point(entities, p0);
+		auto plane_dir_1 = new Direction(entities, d2);
+		auto plane_dir_2 = new Direction(entities, d0);
 		auto plane_csys = new Csys3D(entities, plane_dir_1, plane_dir_2, plane_point);
 		auto plane = new Plane(entities, plane_csys);
 
 		// build the faces
-
 		auto edge_loop = new EdgeLoop(entities, oriented_edges);
 		std::vector<FaceBound*> face_bounds;
 		face_bounds.push_back(new FaceBound(entities, edge_loop, true));
@@ -162,6 +135,11 @@ void StepKernel::build_tri_body(std::vector<double> tris,double tol, int &merged
 	}
 
 	// build the model
+	auto point = new Point(entities, Vector3());
+	auto dir_1 = new Direction(entities, Vector3(0.0, 0.0, 1.0));
+	auto dir_2 = new Direction(entities, Vector3(1.0, 0.0, 0.0));
+	auto base_csys = new Csys3D(entities, dir_1, dir_2, point);
+
 	auto open_shell = new Shell(entities, faces);
 	std::vector<Shell*> shells;
 	shells.push_back(open_shell);
@@ -170,19 +148,19 @@ void StepKernel::build_tri_body(std::vector<double> tris,double tol, int &merged
 }
 
 void StepKernel::get_edge_from_map(
-	double  p0[3],
-	double  p1[3],
-	std::map<std::tuple<double, double, double, double, double, double>, StepKernel::EdgeCurve *> &edge_map,
+	const Vector3& p0,
+	const Vector3& p1,
+	Edge_Map &edge_map,
+	StepKernel::Vertex * vert0,
 	StepKernel::Vertex * vert1,
-	StepKernel::Vertex * vert2,
 	EdgeCurve *& edge_curve,
 	bool &edge_dir,
 	int &merge_cnt)
 {
 	edge_curve = 0;
 	edge_dir = true;
-	auto edge_tuple1_f = std::make_tuple(p0[0], p0[1], p0[2], p1[0], p1[1], p1[2]);
-	auto edge_tuple1_r = std::make_tuple(p1[0], p1[1], p1[2], p0[0], p0[1], p0[2]);
+	auto edge_tuple1_f = std::make_pair(p0, p1);
+	auto edge_tuple1_r = std::make_pair(p1, p0);
 	if (edge_map.count(edge_tuple1_f))
 	{
 		edge_curve = edge_map[edge_tuple1_f];
@@ -197,7 +175,7 @@ void StepKernel::get_edge_from_map(
 	}
 	if (!edge_curve)
 	{
-		edge_curve = create_edge_curve(vert1, vert2, true);
+		edge_curve = create_edge_curve(vert0, vert1, true);
 		edge_map[edge_tuple1_f] = edge_curve;
 	}
 }
@@ -261,9 +239,9 @@ void StepKernel::write_step(std::string file_name, const std::string &unit, cons
 	std::string s = schema;
 	for (auto &c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
 	if (s == "214" || s == "ap214")
-		stp_file << "FILE_SCHEMA(('AP214IS'),'3');\n";
+		stp_file << "FILE_SCHEMA(('AUTOMOTIVE_DESIGN { 1 0 10303 214 0 1 1 1 }'));\n";
 	else
-		stp_file << "FILE_SCHEMA(('AP203'),'2');\n";
+		stp_file << "FILE_SCHEMA(('CONFIG_CONTROL_DESIGN'));\n";
 	stp_file << "ENDSEC;\n";
 
 	// Data section

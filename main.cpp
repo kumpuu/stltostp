@@ -33,7 +33,7 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.*/
 #include <iostream>
 #include <fstream>
 
-std::vector<double> read_stl_binary(std::string file_name)
+std::vector<Vector3> read_stl_binary(std::string file_name)
 {
 	/*
 	according to wikipedia ...
@@ -47,7 +47,7 @@ std::vector<double> read_stl_binary(std::string file_name)
 	UINT16 � Attribute byte count
 	end	*/
 
-	std::vector<double> nodes;
+	std::vector<Vector3> nodes;
 	std::ifstream file(file_name, std::ios::in | std::ios::binary);
 	if (!file)
 	{
@@ -60,24 +60,28 @@ std::vector<double> read_stl_binary(std::string file_name)
 
 	uint32_t tris = 0;
 	file.read((char*)(&tris),sizeof(uint32_t));
-	nodes.resize(std::size_t(tris) * 9);
+	nodes.reserve(std::size_t(tris) * 3);
+
 	for (std::size_t i = 0; i < tris; i++)
 	{
 		float_t  n[3], pts[9];
 		uint16_t att;
-		file.read((char*)(n), sizeof(float_t) * 3);
-		file.read((char*)(pts), sizeof(float_t) * 9);
-		file.read((char*)(&att), sizeof(uint16_t));
-		for (int j = 0; j < 9; j++)
-			nodes[i * 9 + j] = pts[j];
+
+		file.read((char*)(n),     sizeof(float_t) * 3);
+		file.read((char*)(pts),   sizeof(float_t) * 9);
+		file.read((char*)(&att),  sizeof(uint16_t));
+
+		nodes.push_back(Vector3(pts[0], pts[1], pts[2]));
+		nodes.push_back(Vector3(pts[3], pts[4], pts[5]));
+		nodes.push_back(Vector3(pts[6], pts[7], pts[8]));
 	}
 	file.close();
 	return nodes;
 }
 
-std::vector<double> read_stl_ascii(std::string file_name)
+std::vector<Vector3> read_stl_ascii(std::string file_name)
 {
-	std::vector<double> nodes;
+	std::vector<Vector3> nodes;
 	std::ifstream file;
 	file.open(file_name);
 	if (!file)
@@ -93,20 +97,18 @@ std::vector<double> read_stl_ascii(std::string file_name)
 		double  x, y, z;
 		if ((iss >> vert >> x >> y >> z) && vert == "vertex")
 		{
-			nodes.push_back(x);
-			nodes.push_back(y);
-			nodes.push_back(z);
+			nodes.push_back(Vector3(x, y, z));
 		}
 	}
 	file.close();
 	return nodes;
 }
 
-std::vector<double> read_stl(std::string file_name)
+std::vector<Vector3> read_stl(std::string file_name)
 {
 	// inspired by: https://stackoverflow.com/questions/26171521/verifying-that-an-stl-file-is-ascii-or-binary
 	std::ifstream file_test(file_name, std::ifstream::ate | std::ifstream::binary);
-	std::vector<double> nodes;
+	std::vector<Vector3> nodes;
 	if (!file_test)
 	{
 		std::cout << "Failed to open stl file: " << file_name << "\n";
@@ -219,14 +221,14 @@ int main(int arv, char* argc[])
 		arg_cnt++;
 	}
 
-	std::vector<double> nodes = read_stl(input_file);
-	if (nodes.size()/9 == 0)
+	std::vector<Vector3> nodes = read_stl(input_file);
+	if (nodes.size() == 0)
 	{
 		std::cout << "No triangles found in stl file: " << input_file << "\n";
 		return 1;
 	}
 	
-	std::cout << "Read " << nodes.size() / 9 << " triangles from " << input_file << "\n";
+	std::cout << "Read " << nodes.size() / 3 << " triangles from " << input_file << "\n";
 
 	StepKernel se;
 	int merged_edge_cnt = 0;
